@@ -10,7 +10,16 @@ const state = {
   scrollSpeed: 2000, // Initial scroll speed
   consecutiveNewContacts: 0, // Track consecutive successful contact extractions
   targetContactsPerScroll: 14, // Target number of contacts to find per scroll
-  optimalSpeedFound: false // Track if we've found the optimal speed
+  optimalSpeedFound: false, // Track if we've found the optimal speed
+  stats: {
+    startTime: Date.now(),
+    lastUpdateTime: Date.now(),
+    contactsPerMinute: 0,
+    totalScrolls: 0,
+    successfulScrolls: 0,
+    failedScrolls: 0,
+    lastContactsFound: 0
+  }
 };
 
 function createControlPanel() {
@@ -33,7 +42,9 @@ function createControlPanel() {
     box-shadow: 0 2px 10px rgba(0,0,0,0.2);
     z-index: 9999;
     font-family: Arial, sans-serif;
-    min-width: 200px;
+    min-width: 300px;
+    max-height: 90vh;
+    overflow-y: auto;
   `;
 
   // Create status display
@@ -48,6 +59,29 @@ function createControlPanel() {
   `;
   statusDisplay.textContent = 'Status: Initializing...';
   panel.appendChild(statusDisplay);
+
+  // Create stats display
+  const statsDisplay = document.createElement('div');
+  statsDisplay.id = 'stats-display';
+  statsDisplay.style.cssText = `
+    margin-bottom: 10px;
+    padding: 10px;
+    background: #e8f4f8;
+    border-radius: 4px;
+    font-size: 13px;
+    line-height: 1.4;
+  `;
+  statsDisplay.innerHTML = `
+    <div style="font-weight: bold; margin-bottom: 5px; color: #2c3e50;">📊 Live Statistics</div>
+    <div>⏱️ Running Time: <span id="running-time">0:00</span></div>
+    <div>📈 Contacts/Minute: <span id="contacts-per-minute">0</span></div>
+    <div>📝 Total Contacts: <span id="total-contacts">0</span></div>
+    <div>⚡ Current Speed: <span id="current-speed">2000</span>px</div>
+    <div>🔄 Scroll Success Rate: <span id="scroll-success-rate">0</span>%</div>
+    <div>🎯 Target Contacts/Scroll: <span id="target-contacts">14</span></div>
+    <div>✅ Optimal Speed: <span id="optimal-speed">Not Found</span></div>
+  `;
+  panel.appendChild(statsDisplay);
 
   // Create download button
   const downloadButton = document.createElement('button');
@@ -97,6 +131,32 @@ function updateStatus(message) {
     statusDisplay.textContent = `Status: ${message}`;
   }
   console.log(message);
+}
+
+function updateStats() {
+  const now = Date.now();
+  const runningTime = Math.floor((now - state.stats.startTime) / 1000);
+  const minutes = Math.floor(runningTime / 60);
+  const seconds = runningTime % 60;
+  
+  // Calculate contacts per minute
+  const timeDiff = (now - state.stats.lastUpdateTime) / 1000 / 60; // in minutes
+  if (timeDiff >= 1) {
+    state.stats.contactsPerMinute = Math.round(state.extractedData.length / (runningTime / 60));
+    state.stats.lastUpdateTime = now;
+  }
+
+  // Update all stats elements
+  document.getElementById('running-time').textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  document.getElementById('contacts-per-minute').textContent = state.stats.contactsPerMinute;
+  document.getElementById('total-contacts').textContent = state.extractedData.length;
+  document.getElementById('current-speed').textContent = state.scrollSpeed;
+  document.getElementById('scroll-success-rate').textContent = 
+    state.stats.totalScrolls > 0 
+      ? Math.round((state.stats.successfulScrolls / state.stats.totalScrolls) * 100) 
+      : 0;
+  document.getElementById('target-contacts').textContent = state.targetContactsPerScroll;
+  document.getElementById('optimal-speed').textContent = state.optimalSpeedFound ? 'Found' : 'Not Found';
 }
 
 function extractContactData() {
@@ -262,6 +322,7 @@ async function forceScroll() {
 
     // Get the current scroll position
     const currentScroll = container.scrollTop;
+    state.stats.totalScrolls++;
     
     // Try multiple scrolling methods
     const scrollMethods = [
@@ -291,10 +352,11 @@ async function forceScroll() {
     for (const scrollMethod of scrollMethods) {
       try {
         scrollMethod();
-        await new Promise(resolve => setTimeout(resolve, 500)); // Reduced wait time
+        await new Promise(resolve => setTimeout(resolve, 500));
         
         // Check if we actually scrolled
         if (container.scrollTop > currentScroll) {
+          state.stats.successfulScrolls++;
           console.log('Successfully scrolled using method:', scrollMethod.name);
           return true;
         }
@@ -324,6 +386,7 @@ async function scrollAndExtract() {
     if (newContacts.length > 0) {
       state.extractedData.push(...newContacts);
       state.consecutiveNewContacts++;
+      state.stats.lastContactsFound = newContacts.length;
       
       // Increase scroll speed if we haven't found the optimal speed yet
       if (!state.optimalSpeedFound) {
@@ -331,7 +394,7 @@ async function scrollAndExtract() {
           state.optimalSpeedFound = true;
           updateStatus(`✅ Optimal speed found! Found ${newContacts.length} contacts at once. Maintaining speed: ${state.scrollSpeed}`);
         } else {
-          state.scrollSpeed = Math.min(state.scrollSpeed + 1000, 10000); // Increase by 1000, max 10000
+          state.scrollSpeed = Math.min(state.scrollSpeed + 1000, 10000);
           updateStatus(`Found ${newContacts.length} new contacts. Increasing speed to ${state.scrollSpeed} (Target: ${state.targetContactsPerScroll})`);
         }
       } else {
@@ -341,9 +404,8 @@ async function scrollAndExtract() {
     } else {
       state.noNewDataCount++;
       state.consecutiveNewContacts = 0;
-      // Only decrease speed if we haven't found optimal speed yet
       if (!state.optimalSpeedFound) {
-        state.scrollSpeed = Math.max(state.scrollSpeed - 500, 1000); // Don't go below 1000
+        state.scrollSpeed = Math.max(state.scrollSpeed - 500, 1000);
       }
       updateStatus(`No new contacts found. Attempt ${state.noNewDataCount} (Speed: ${state.scrollSpeed})`);
     }
@@ -352,7 +414,6 @@ async function scrollAndExtract() {
     const scrolled = await forceScroll();
     if (!scrolled) {
       state.scrollAttempts++;
-      // Only show failed message if we haven't found any contacts in a while
       if (state.noNewDataCount > 2) {
         updateStatus(`Failed to scroll. Attempt ${state.scrollAttempts} (Speed: ${state.scrollSpeed})`);
       }
@@ -360,7 +421,10 @@ async function scrollAndExtract() {
       state.scrollAttempts = 0;
     }
 
-    // Wait for content to load (reduced wait time)
+    // Update stats
+    updateStats();
+
+    // Wait for content to load
     await new Promise(resolve => setTimeout(resolve, 1000));
     
     // Continue scrolling
