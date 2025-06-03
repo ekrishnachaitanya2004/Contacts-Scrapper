@@ -6,7 +6,9 @@ const state = {
   lastScrollPosition: 0,
   noNewDataCount: 0,
   scrollAttempts: 0,
-  maxScrollAttempts: 2000
+  maxScrollAttempts: 2000,
+  scrollSpeed: 2000, // Initial scroll speed
+  consecutiveNewContacts: 0 // Track consecutive successful contact extractions
 };
 
 function createControlPanel() {
@@ -261,17 +263,17 @@ async function forceScroll() {
     
     // Try multiple scrolling methods
     const scrollMethods = [
-      // Method 1: Direct scroll
-      () => container.scrollTop += 1000,
+      // Method 1: Direct scroll with dynamic speed
+      () => container.scrollTop += state.scrollSpeed,
       
-      // Method 2: Smooth scroll
+      // Method 2: Smooth scroll with dynamic speed
       () => container.scrollTo({
-        top: currentScroll + 1000,
+        top: currentScroll + state.scrollSpeed,
         behavior: 'smooth'
       }),
       
-      // Method 3: Using scrollBy
-      () => container.scrollBy(0, 1000),
+      // Method 3: Using scrollBy with dynamic speed
+      () => container.scrollBy(0, state.scrollSpeed),
       
       // Method 4: Using transform
       () => {
@@ -287,7 +289,7 @@ async function forceScroll() {
     for (const scrollMethod of scrollMethods) {
       try {
         scrollMethod();
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise(resolve => setTimeout(resolve, 500)); // Reduced wait time
         
         // Check if we actually scrolled
         if (container.scrollTop > currentScroll) {
@@ -319,44 +321,43 @@ async function scrollAndExtract() {
     const newContacts = extractContactData();
     if (newContacts.length > 0) {
       state.extractedData.push(...newContacts);
-      updateStatus(`Found ${newContacts.length} new contacts. Total: ${state.extractedData.length}`);
+      state.consecutiveNewContacts++;
+      
+      // Increase scroll speed if we're finding contacts consistently
+      if (state.consecutiveNewContacts >= 3) {
+        state.scrollSpeed = Math.min(state.scrollSpeed + 500, 5000); // Cap at 5000
+      }
+      
+      updateStatus(`Found ${newContacts.length} new contacts. Total: ${state.extractedData.length} (Speed: ${state.scrollSpeed})`);
       state.noNewDataCount = 0;
     } else {
       state.noNewDataCount++;
-      updateStatus(`No new contacts found. Attempt ${state.noNewDataCount}/5`);
-    }
-
-    // Check if we should stop
-    if (state.noNewDataCount >= 5) {
-      updateStatus('No new contacts found after 5 attempts. Stopping...');
-      state.isRunning = false;
-      return;
+      state.consecutiveNewContacts = 0;
+      state.scrollSpeed = Math.max(state.scrollSpeed - 500, 1000); // Don't go below 1000
+      updateStatus(`No new contacts found. Attempt ${state.noNewDataCount} (Speed: ${state.scrollSpeed})`);
     }
 
     // Try to scroll
     const scrolled = await forceScroll();
     if (!scrolled) {
       state.scrollAttempts++;
-      updateStatus(`Failed to scroll. Attempt ${state.scrollAttempts}/${state.maxScrollAttempts}`);
-      
-      if (state.scrollAttempts >= state.maxScrollAttempts) {
-        updateStatus('Max scroll attempts reached. Stopping...');
-        state.isRunning = false;
-        return;
+      // Only show failed message if we haven't found any contacts in a while
+      if (state.noNewDataCount > 2) {
+        updateStatus(`Failed to scroll. Attempt ${state.scrollAttempts} (Speed: ${state.scrollSpeed})`);
       }
     } else {
       state.scrollAttempts = 0;
     }
 
-    // Wait for content to load
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    // Wait for content to load (reduced wait time)
+    await new Promise(resolve => setTimeout(resolve, 1000));
     
     // Continue scrolling
     requestAnimationFrame(scrollAndExtract);
   } catch (error) {
     console.error('Error in scrollAndExtract:', error);
     updateStatus('Error occurred. Retrying...');
-    setTimeout(scrollAndExtract, 2000);
+    setTimeout(scrollAndExtract, 1000);
   }
 }
 
