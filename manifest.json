@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "Directory Email Importer",
+  "version": "1.0",
+  "description": "Auto-import all organization directory contacts into your Google Contacts.",
+  "permissions": ["scripting", "activeTab"],
+  "host_permissions": ["https://contacts.google.com/*"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": "icon.png"
+  },
+  "background": {
+    "service_worker": "background.js"
+  }
+} 
