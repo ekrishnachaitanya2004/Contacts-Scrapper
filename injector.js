@@ -7,10 +7,10 @@ const state = {
   noNewDataCount: 0,
   scrollAttempts: 0,
   maxScrollAttempts: 2000,
-  scrollSpeed: 2000, // Initial scroll speed
-  consecutiveNewContacts: 0, // Track consecutive successful contact extractions
-  targetContactsPerScroll: 14, // Target number of contacts to find per scroll
-  optimalSpeedFound: false, // Track if we've found the optimal speed
+  scrollSpeed: 5000,
+  consecutiveNewContacts: 0,
+  targetContactsPerScroll: 14,
+  optimalSpeedFound: false,
   stats: {
     startTime: Date.now(),
     lastUpdateTime: Date.now(),
@@ -327,16 +327,25 @@ async function forceScroll() {
     // Try multiple scrolling methods
     const scrollMethods = [
       // Method 1: Direct scroll with dynamic speed
-      () => container.scrollTop += state.scrollSpeed,
+      () => {
+        container.scrollTop += state.scrollSpeed;
+        return new Promise(resolve => setTimeout(resolve, 100));
+      },
       
       // Method 2: Smooth scroll with dynamic speed
-      () => container.scrollTo({
-        top: currentScroll + state.scrollSpeed,
-        behavior: 'smooth'
-      }),
+      () => {
+        container.scrollTo({
+          top: currentScroll + state.scrollSpeed,
+          behavior: 'smooth'
+        });
+        return new Promise(resolve => setTimeout(resolve, 100));
+      },
       
       // Method 3: Using scrollBy with dynamic speed
-      () => container.scrollBy(0, state.scrollSpeed),
+      () => {
+        container.scrollBy(0, state.scrollSpeed);
+        return new Promise(resolve => setTimeout(resolve, 100));
+      },
       
       // Method 4: Using transform
       () => {
@@ -345,14 +354,14 @@ async function forceScroll() {
           const lastContact = contacts[contacts.length - 1];
           lastContact.scrollIntoView({ behavior: 'smooth', block: 'end' });
         }
+        return new Promise(resolve => setTimeout(resolve, 100));
       }
     ];
 
     // Try each scrolling method
     for (const scrollMethod of scrollMethods) {
       try {
-        scrollMethod();
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await scrollMethod();
         
         // Check if we actually scrolled
         if (container.scrollTop > currentScroll) {
@@ -394,8 +403,18 @@ async function scrollAndExtract() {
           state.optimalSpeedFound = true;
           updateStatus(`✅ Optimal speed found! Found ${newContacts.length} contacts at once. Maintaining speed: ${state.scrollSpeed}`);
         } else {
-          state.scrollSpeed = Math.min(state.scrollSpeed + 1000, 10000);
-          updateStatus(`Found ${newContacts.length} new contacts. Increasing speed to ${state.scrollSpeed} (Target: ${state.targetContactsPerScroll})`);
+          // More aggressive speed increase
+          const speedIncrease = Math.max(2000, Math.floor(state.scrollSpeed * 0.5));
+          state.scrollSpeed = Math.min(state.scrollSpeed + speedIncrease, 20000);
+          
+          // If we're at max speed but not finding enough contacts, try a different approach
+          if (state.scrollSpeed >= 20000 && newContacts.length < state.targetContactsPerScroll) {
+            // Try a different scroll strategy
+            state.scrollSpeed = 10000; // Reset to a more moderate speed
+            updateStatus(`Resetting speed to ${state.scrollSpeed} to improve contact detection`);
+          } else {
+            updateStatus(`Found ${newContacts.length} new contacts. Increasing speed to ${state.scrollSpeed} (Target: ${state.targetContactsPerScroll})`);
+          }
         }
       } else {
         updateStatus(`Found ${newContacts.length} new contacts. Total: ${state.extractedData.length} (Speed: ${state.scrollSpeed})`);
@@ -405,7 +424,8 @@ async function scrollAndExtract() {
       state.noNewDataCount++;
       state.consecutiveNewContacts = 0;
       if (!state.optimalSpeedFound) {
-        state.scrollSpeed = Math.max(state.scrollSpeed - 500, 1000);
+        // More aggressive speed decrease when no contacts found
+        state.scrollSpeed = Math.max(state.scrollSpeed - 2000, 2000);
       }
       updateStatus(`No new contacts found. Attempt ${state.noNewDataCount} (Speed: ${state.scrollSpeed})`);
     }
@@ -416,6 +436,8 @@ async function scrollAndExtract() {
       state.scrollAttempts++;
       if (state.noNewDataCount > 2) {
         updateStatus(`Failed to scroll. Attempt ${state.scrollAttempts} (Speed: ${state.scrollSpeed})`);
+        // If we're failing to scroll, try reducing speed
+        state.scrollSpeed = Math.max(state.scrollSpeed - 5000, 2000);
       }
     } else {
       state.scrollAttempts = 0;
@@ -424,15 +446,15 @@ async function scrollAndExtract() {
     // Update stats
     updateStats();
 
-    // Wait for content to load
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    // Reduced wait time for faster scrolling
+    await new Promise(resolve => setTimeout(resolve, 500));
     
     // Continue scrolling
     requestAnimationFrame(scrollAndExtract);
   } catch (error) {
     console.error('Error in scrollAndExtract:', error);
     updateStatus('Error occurred. Retrying...');
-    setTimeout(scrollAndExtract, 1000);
+    setTimeout(scrollAndExtract, 500);
   }
 }
 
