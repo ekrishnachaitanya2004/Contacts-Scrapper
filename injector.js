@@ -8,7 +8,9 @@ const state = {
   scrollAttempts: 0,
   maxScrollAttempts: 2000,
   scrollSpeed: 2000, // Initial scroll speed
-  consecutiveNewContacts: 0 // Track consecutive successful contact extractions
+  consecutiveNewContacts: 0, // Track consecutive successful contact extractions
+  targetContactsPerScroll: 14, // Target number of contacts to find per scroll
+  optimalSpeedFound: false // Track if we've found the optimal speed
 };
 
 function createControlPanel() {
@@ -323,17 +325,26 @@ async function scrollAndExtract() {
       state.extractedData.push(...newContacts);
       state.consecutiveNewContacts++;
       
-      // Increase scroll speed if we're finding contacts consistently
-      if (state.consecutiveNewContacts >= 3) {
-        state.scrollSpeed = Math.min(state.scrollSpeed + 500, 5000); // Cap at 5000
+      // Increase scroll speed if we haven't found the optimal speed yet
+      if (!state.optimalSpeedFound) {
+        if (newContacts.length >= state.targetContactsPerScroll) {
+          state.optimalSpeedFound = true;
+          updateStatus(`✅ Optimal speed found! Found ${newContacts.length} contacts at once. Maintaining speed: ${state.scrollSpeed}`);
+        } else {
+          state.scrollSpeed = Math.min(state.scrollSpeed + 1000, 10000); // Increase by 1000, max 10000
+          updateStatus(`Found ${newContacts.length} new contacts. Increasing speed to ${state.scrollSpeed} (Target: ${state.targetContactsPerScroll})`);
+        }
+      } else {
+        updateStatus(`Found ${newContacts.length} new contacts. Total: ${state.extractedData.length} (Speed: ${state.scrollSpeed})`);
       }
-      
-      updateStatus(`Found ${newContacts.length} new contacts. Total: ${state.extractedData.length} (Speed: ${state.scrollSpeed})`);
       state.noNewDataCount = 0;
     } else {
       state.noNewDataCount++;
       state.consecutiveNewContacts = 0;
-      state.scrollSpeed = Math.max(state.scrollSpeed - 500, 1000); // Don't go below 1000
+      // Only decrease speed if we haven't found optimal speed yet
+      if (!state.optimalSpeedFound) {
+        state.scrollSpeed = Math.max(state.scrollSpeed - 500, 1000); // Don't go below 1000
+      }
       updateStatus(`No new contacts found. Attempt ${state.noNewDataCount} (Speed: ${state.scrollSpeed})`);
     }
 
